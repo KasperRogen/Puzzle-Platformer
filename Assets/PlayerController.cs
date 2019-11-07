@@ -9,12 +9,15 @@ public class PlayerController : MonoBehaviour
     PlayerProperties playerprops = PlayerProperties.CurrentPlayerSettings;
     Rigidbody rb;
     Transform cam;
-    public enum MovementTypes
+    public enum MovementStates
     {
         WALKING,
         SPRINTING,
-        HOVERING
+        HOVERING,
+        FALLING,
+        IDLE,
     }
+    
 
     public Transform Thruster;
     private EngineAnimator engineAnimator;
@@ -24,7 +27,24 @@ public class PlayerController : MonoBehaviour
     private bool IsSprinting;
     public LayerMask layermask;
 
+
+
     private Vector3 XYVector;
+    Vector3 currentXYVector;
+
+    void RequestMovementState(MovementStates state)
+    {
+        playerprops.MovementState = state;
+    }
+
+
+    bool AccelerationValid(Vector3 acc)
+    {
+        float v = (XYVector + ((acc * Time.fixedDeltaTime) / rb.mass)).magnitude;
+        Debug.Log(v);
+        return v < XYVector.magnitude 
+            || v < (IsSprinting ? playerprops.SprintSpeed : playerprops.MoveSpeed);
+    }
 
     // Start is called before the first frame update
     void Start()
@@ -37,36 +57,40 @@ public class PlayerController : MonoBehaviour
     // Update is called once per frame
     void FixedUpdate()
     {
-
-        Move();
-        Rotate();
-        Dampen();
-        IsGrounded();
-        Hover();
-        Debug.DrawRay(transform.position, movementVector * 10, Color.yellow);
-        XYVector = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+        
     }
 
     private void Update()
     {
         ReadInput();
+
+        XYVector = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+        Move();
+        Rotate();
+        Dampen();
+        Hover();
         Jump();
+        Debug.DrawRay(transform.position, movementVector * 10, Color.yellow);
+
+
+        engineAnimator.RotateEngine(movementVector);
     }
 
     private void Hover()
     {
         if(Input.GetButton("Jump") && rb.velocity.y < 0 && IsGrounded() == false)
         {
-            rb.AddForce(Vector3.up * playerprops.hoverAmount * Time.fixedDeltaTime);
+            rb.AddForce(Vector3.up * playerprops.hoverAmount * Time.deltaTime);
             Debug.DrawRay(transform.position, Vector3.down, Color.cyan);
-            engineAnimator.HoverEngine(movementVector);
+            RequestMovementState(MovementStates.HOVERING);
         }
+
     }
 
     bool IsGrounded()
     {
         RaycastHit hit;
-        if (Physics.Raycast(transform.position, Vector3.down, out hit, 0.6f, layermask))
+        if (Physics.Raycast(transform.position, Vector3.down, out hit, 0.7f, layermask))
         {
             return true;
         }
@@ -78,8 +102,9 @@ public class PlayerController : MonoBehaviour
     {
         if (Input.GetButtonDown("Jump") && IsGrounded())
         {
-            rb.AddForce(Vector3.up * playerprops.JumpHeight);
+            rb.AddForce(Vector3.up * playerprops.JumpHeight, ForceMode.Impulse);
             engineAnimator.JumpEngine();
+            RequestMovementState(MovementStates.FALLING);
         }
     }
 
@@ -90,7 +115,7 @@ public class PlayerController : MonoBehaviour
             input.x = Mathf.Clamp(-rb.velocity.x, -1, 1);
             input.z = Mathf.Clamp(-rb.velocity.z, -1, 1);
             movementVector = input;
-            rb.AddForce(movementVector * playerprops.accelerationSpeed, ForceMode.Force);
+            rb.AddForce(movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
             Debug.DrawRay(transform.position, movementVector, Color.red);
         }
     }
@@ -98,14 +123,6 @@ public class PlayerController : MonoBehaviour
     private void Rotate()
     {
 
-        //Vector3 newLookDir = Vector3.RotateTowards(transform.forward, (transform.position + XYVector) - transform.position, 0.15f, 0);
-
-        //Quaternion rot = Quaternion.LookRotation(newLookDir);
-
-        //transform.rotation = Quaternion.Euler(
-        //    0, 
-        //    rot.eulerAngles.y,
-        //    0);
 
         transform.rotation = cam.rotation;
     }
@@ -115,24 +132,24 @@ public class PlayerController : MonoBehaviour
         if (playerprops == null)
             playerprops = PlayerProperties.CurrentPlayerSettings;
 
-        if (input.magnitude == 0)
-            return;
+        Debug.Log(XYVector.magnitude);
 
+        rb.AddForce(movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
 
-        rb.AddForce(movementVector * playerprops.accelerationSpeed, ForceMode.Force);
-            Debug.DrawRay(transform.position, movementVector, Color.green);
-            
-        if(XYVector.magnitude > (IsSprinting? playerprops.SprintSpeed : playerprops.MoveSpeed))
+        if(XYVector.magnitude > (IsSprinting ? playerprops.SprintSpeed : playerprops.MoveSpeed))
         {
-            Vector3 YVelocity = new Vector3(0, rb.velocity.y, 0 );
-            rb.velocity = (XYVector.normalized * (IsSprinting ? playerprops.SprintSpeed : playerprops.MoveSpeed)) + YVelocity;
-
-            
+            float velocityExceedAmount = XYVector.magnitude - (IsSprinting ? playerprops.SprintSpeed : playerprops.MoveSpeed);
+            rb.AddForce(-XYVector * playerprops.accelerationSpeed * velocityExceedAmount);
         }
 
-        if (IsGrounded())
+        //if(AccelerationValid(movementVector * playerprops.accelerationSpeed * Time.deltaTime))
+        //{
+        //    rb.AddForce(movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
+        //}
+
+        if (IsGrounded() && rb.velocity.y < 0.1f)
         {
-            engineAnimator.MoveEngine(movementVector);
+            RequestMovementState(IsSprinting? MovementStates.SPRINTING : MovementStates.WALKING);
         }
     }
 
@@ -145,8 +162,9 @@ public class PlayerController : MonoBehaviour
 
 
         IsSprinting = Input.GetKey(KeyCode.LeftShift);
+        
+
         Vector3 flatTransRot = transform.rotation.eulerAngles;
-        Debug.Log(flatTransRot);
         flatTransRot.x = 0;
         flatTransRot.z = 0;
         
