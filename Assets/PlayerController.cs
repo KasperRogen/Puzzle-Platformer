@@ -17,7 +17,8 @@ public class PlayerController : MonoBehaviour
         FALLING,
         IDLE,
     }
-    
+
+    Transform flatTrans;
 
     public Transform Thruster;
     private EngineAnimator engineAnimator;
@@ -27,6 +28,9 @@ public class PlayerController : MonoBehaviour
     private bool IsSprinting;
     public LayerMask layermask;
 
+    bool isGrounded;
+    float groundAngle;
+    RaycastHit groundInfo;
 
 
     private Vector3 XYVector;
@@ -42,7 +46,7 @@ public class PlayerController : MonoBehaviour
     {
         float v = (XYVector + ((acc * Time.fixedDeltaTime) / rb.mass)).magnitude;
         Debug.Log(v);
-        return v < XYVector.magnitude 
+        return v < XYVector.magnitude
             || v < (IsSprinting ? playerprops.SprintSpeed : playerprops.MoveSpeed);
     }
 
@@ -52,6 +56,7 @@ public class PlayerController : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         engineAnimator = Thruster.GetComponent<EngineAnimator>();
         cam = Camera.main.transform;
+        flatTrans = Instantiate(new GameObject()).transform;
     }
 
     // Update is called once per frame
@@ -62,6 +67,9 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        UpdateFlattrans();
+
+        IsGrounded();
         ReadInput();
 
         XYVector = new Vector3(rb.velocity.x, 0, rb.velocity.z);
@@ -76,31 +84,39 @@ public class PlayerController : MonoBehaviour
         engineAnimator.RotateEngine(movementVector);
     }
 
+    private void UpdateFlattrans()
+    {
+        flatTrans.position = transform.position;
+        Vector3 flatTransRot = transform.rotation.eulerAngles;
+        flatTransRot.x = 0;
+        flatTransRot.z = 0;
+        flatTrans.rotation = Quaternion.Euler(flatTransRot);
+    }
+
     private void Hover()
     {
-        if(Input.GetButton("Jump") && rb.velocity.y < 0 && IsGrounded() == false)
+        if(Input.GetButton("Jump") && rb.velocity.y < 0 && isGrounded == false)
         {
             rb.AddForce(Vector3.up * playerprops.hoverAmount * Time.deltaTime);
-            Debug.DrawRay(transform.position, Vector3.down, Color.cyan);
             RequestMovementState(MovementStates.HOVERING);
         }
 
     }
 
-    bool IsGrounded()
+    void IsGrounded()
     {
-        RaycastHit hit;
-        if (Physics.Raycast(transform.position, Vector3.down, out hit, 0.7f, layermask))
+        if (Physics.Raycast(transform.position, Vector3.down, out groundInfo, 0.6f, layermask))
         {
-            return true;
+            isGrounded = true;
+        } else
+        {
+            isGrounded = false;
         }
-
-        return false;
     }
 
     private void Jump()
     {
-        if (Input.GetButtonDown("Jump") && IsGrounded())
+        if (Input.GetButtonDown("Jump") && isGrounded)
         {
             rb.AddForce(Vector3.up * playerprops.JumpHeight, ForceMode.Impulse);
             engineAnimator.JumpEngine();
@@ -115,9 +131,12 @@ public class PlayerController : MonoBehaviour
             input.x = Mathf.Clamp(-rb.velocity.x, -1, 1);
             input.z = Mathf.Clamp(-rb.velocity.z, -1, 1);
             movementVector = input;
-            rb.AddForce(movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
+            rb.AddForce(movementVector.normalized + movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
             Debug.DrawRay(transform.position, movementVector, Color.red);
         }
+
+        rb.AddForce(-XYVector * XYVector.magnitude * 4, ForceMode.Force);
+
     }
 
     private void Rotate()
@@ -133,21 +152,11 @@ public class PlayerController : MonoBehaviour
             playerprops = PlayerProperties.CurrentPlayerSettings;
 
         Debug.Log(XYVector.magnitude);
-
+        
         rb.AddForce(movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
 
-        if(XYVector.magnitude > (IsSprinting ? playerprops.SprintSpeed : playerprops.MoveSpeed))
-        {
-            float velocityExceedAmount = XYVector.magnitude - (IsSprinting ? playerprops.SprintSpeed : playerprops.MoveSpeed);
-            rb.AddForce(-XYVector * playerprops.accelerationSpeed * velocityExceedAmount);
-        }
 
-        //if(AccelerationValid(movementVector * playerprops.accelerationSpeed * Time.deltaTime))
-        //{
-        //    rb.AddForce(movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
-        //}
-
-        if (IsGrounded() && rb.velocity.y < 0.1f)
+        if (isGrounded && rb.velocity.y < 0.1f)
         {
             RequestMovementState(IsSprinting? MovementStates.SPRINTING : MovementStates.WALKING);
         }
@@ -157,20 +166,27 @@ public class PlayerController : MonoBehaviour
     {
         input.x = Input.GetAxisRaw("Horizontal");
         input.z = Input.GetAxisRaw("Vertical");
-
-        Debug.DrawRay(transform.position, input);
+        
 
 
         IsSprinting = Input.GetKey(KeyCode.LeftShift);
-        
 
-        Vector3 flatTransRot = transform.rotation.eulerAngles;
-        flatTransRot.x = 0;
-        flatTransRot.z = 0;
-        
-        input = Quaternion.Euler(flatTransRot) * input;
+        Debug.DrawRay(transform.position, flatTrans.forward * 10);
 
-        movementVector = input * (IsSprinting ? 2 : 1);
+        input = flatTrans.TransformDirection(input);
+
+        if (isGrounded)
+        {
+            Vector3 forward = Vector3.Cross(flatTrans.right, groundInfo.normal) * input.z * (IsSprinting ? 2 : 1);
+            Vector3 right =   Vector3.Cross(flatTrans.forward, groundInfo.normal) * -input.x * (IsSprinting ? 2 : 1);
+            movementVector = forward + right;
+        } else
+        {
+            movementVector = input * (IsSprinting ? 2 : 1);
+        }
+
+        Debug.DrawRay(transform.position, movementVector * 100, Color.magenta);
+
 
         
     }
