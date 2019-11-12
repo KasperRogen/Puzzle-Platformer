@@ -43,7 +43,7 @@ public class EngineAnimator : MonoBehaviour
     {
         Move.Stop();
         Hover.Stop();
-        Jump.Stop();
+        Sprint.Stop();
     }
 
     public void MoveEngine()
@@ -106,7 +106,7 @@ public class EngineAnimator : MonoBehaviour
                 }
             }
             lastMoveState = playerProps.MovementState;
-
+            Debug.Log(playerProps.MovementState);
             yield return new WaitForSeconds(0.01f);
 
 

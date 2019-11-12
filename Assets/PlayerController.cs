@@ -56,7 +56,7 @@ public class PlayerController : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         engineAnimator = Thruster.GetComponent<EngineAnimator>();
         cam = Camera.main.transform;
-        flatTrans = Instantiate(new GameObject()).transform;
+        flatTrans = new GameObject("FlatTrans").transform;
     }
 
     // Update is called once per frame
@@ -80,8 +80,11 @@ public class PlayerController : MonoBehaviour
         Jump();
         Debug.DrawRay(transform.position, movementVector * 10, Color.yellow);
 
+        if (input.magnitude == 0)
+        {
+            engineAnimator.RotateEngine(movementVector);
+        }
 
-        engineAnimator.RotateEngine(movementVector);
     }
 
     private void UpdateFlattrans()
@@ -128,14 +131,11 @@ public class PlayerController : MonoBehaviour
     {
         if (input.magnitude == 0)
         {
-            input.x = Mathf.Clamp(-rb.velocity.x, -1, 1);
-            input.z = Mathf.Clamp(-rb.velocity.z, -1, 1);
-            movementVector = input;
+            movementVector.x = Mathf.Clamp(-rb.velocity.x, -1, 1);
+            movementVector.z = Mathf.Clamp(-rb.velocity.z, -1, 1);
             rb.AddForce(movementVector.normalized + movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
             Debug.DrawRay(transform.position, movementVector, Color.red);
         }
-
-        rb.AddForce(-XYVector * XYVector.magnitude * 4, ForceMode.Force);
 
     }
 
@@ -151,7 +151,6 @@ public class PlayerController : MonoBehaviour
         if (playerprops == null)
             playerprops = PlayerProperties.CurrentPlayerSettings;
 
-        Debug.Log(XYVector.magnitude);
         
         rb.AddForce(movementVector * playerprops.accelerationSpeed * Time.deltaTime, ForceMode.Force);
 
@@ -175,14 +174,32 @@ public class PlayerController : MonoBehaviour
 
         input = flatTrans.TransformDirection(input);
 
+        if(input.magnitude != 0) { 
+            engineAnimator.RotateEngine(input);
+        }
+
         if (isGrounded)
         {
-            Vector3 forward = Vector3.Cross(flatTrans.right, groundInfo.normal) * input.z * (IsSprinting ? 2 : 1);
-            Vector3 right =   Vector3.Cross(flatTrans.forward, groundInfo.normal) * -input.x * (IsSprinting ? 2 : 1);
+            Vector3 forward = Vector3.Cross(Vector3.right, groundInfo.normal) * input.z * (IsSprinting ? 2 : 1);
+            Vector3 right =   Vector3.Cross(Vector3.forward, groundInfo.normal) * -input.x * (IsSprinting ? 2 : 1);
+
+            Debug.DrawRay(transform.position, (forward + right) * 100, Color.blue);
+            
             movementVector = forward + right;
+            
         } else
         {
             movementVector = input * (IsSprinting ? 2 : 1);
+        }
+
+        if (IsSprinting) //Sprinting
+        {                         
+            movementVector.x += Mathf.Abs(XYVector.x) > 2 ? -XYVector.normalized.x * 2 : -XYVector.x;
+            movementVector.z += Mathf.Abs(XYVector.z) > 2 ? -XYVector.normalized.z * 2 : -XYVector.z;
+        } else //Walking
+        {
+            movementVector.x += Mathf.Abs(XYVector.x) > 1 ? -XYVector.normalized.x : -XYVector.x;
+            movementVector.z += Mathf.Abs(XYVector.z) > 1 ? -XYVector.normalized.z : -XYVector.z;
         }
 
         Debug.DrawRay(transform.position, movementVector * 100, Color.magenta);
